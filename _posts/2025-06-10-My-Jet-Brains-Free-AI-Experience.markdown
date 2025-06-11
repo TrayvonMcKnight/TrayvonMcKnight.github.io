@@ -128,7 +128,8 @@ tally_report = self.get_today_tally_report_for_all_metric('product123')
 >The output structure remains the same as before, but the code is now more maintainable and less prone to errors. If you need to add new metrics or categories in the future, you only need to update the dictionary at the top of the function. `metrics`  
 
 ---
-From here, I turned my focus to the top level __ init __ _.py file. 
+From here, I turned my focus to the top level __ init __ _.py file, which is huge and touches many 
+pieces of the plugin.
 
 _Prompt_: " Can you recommend a way to break up this file"  
 
@@ -174,94 +175,12 @@ rhsm_subscriptions/
     ├── config.py       # Configuration related utilities
     └── validators.py   # Validation helpers
 ```
-> Example of how to split the code:
-```
 
-# core/base.py
-class ApplicationRhsmSubscriptionsBase:
-    plugin_real_name = "rhsm-subscriptions"
-    plugin_name = "rhsm_subscriptions"
-    plugin_title = "RHSM Subscriptions"
-    
-    def __init__(self):
-        self.tags = []
-        self.used_subscriptions = {}
-
-# api/rest_client.py
-from ..core.base import ApplicationRhsmSubscriptionsBase
-
-class RestClientMixin(ApplicationRhsmSubscriptionsBase):
-    def rest_client(self):
-        # REST client implementation
-        pass
-
-# services/metrics/capacity.py
-from typing import Dict, Any
-from ...core.base import ApplicationRhsmSubscriptionsBase
-
-class CapacityService(ApplicationRhsmSubscriptionsBase):
-    def get_today_capacity_report_for_all_metric(
-        self, product_id: str, granularity: str = "Daily", **kwargs
-    ) -> Dict[str, Any]:
-        # Implementation
-        pass
-
-# services/metrics/tally.py
-class TallyService(ApplicationRhsmSubscriptionsBase):
-    def get_today_tally_report_for_all_metric(
-        self, product_id: str, granularity: str = "Daily", **kwargs
-    ) -> Dict[str, Any]:
-        # Implementation
-        pass
-
-# mock/clusters.py
-class ClusterMockService(ApplicationRhsmSubscriptionsBase):
-    def create_mock_openshift_cluster(self):
-        # Implementation
-        pass
-
-# __init__.py
-from .core.base import ApplicationRhsmSubscriptionsBase
-from .api.rest_client import RestClientMixin
-from .services.metrics.capacity import CapacityService
-from .services.metrics.tally import TallyService
-# ... other imports
-
-class ApplicationRhsmSubscriptions(
-    RestClientMixin,
-    CapacityService,
-    TallyService,
-    # ... other mixins
-):
-    """Main class that combines all functionality through inheritance"""
-    pass
-```
-
->Benefits of this organization:
->
->1. **Modularity**: Each module has a single responsibility
->2. **Maintainability**: Easier to find and fix issues
->3. **Testability**: Can test each component independently
->4. **Scalability**: Easier to add new features
->5. **Readability**: Smaller, focused files are easier to understand
->6. **Reusability**: Components can be used independently
->7. **Dependencies**: Clearer dependency management
->
->When implementing this structure:
->
->- Move related methods together
->- Use mixins for shared functionality
->- Create proper interfaces/base classes
->- Maintain backward compatibility
->- Add proper type hints
->- Include comprehensive documentation
->- Add proper test coverage for each module
->
-This organization will make the code more maintainable and easier to work with in the long term.
+The AI then followed up with an example of how to split the code up. Granted it was boiler plate code, I was pleasantly surprised to see a different way of organization. 
 
 ---
 
-I soon started to to ask more descriptive questions in an attempt to sway the AI to provide a code sample that I liked.  
+I soon started to ask more descriptive questions in an attempt to sway the AI to provide a code sample that I liked.  
 
 _Prompt_: "I would like to add a proper class structure to this file. Functions should be grouped in the correct class with functions that hit the same services."
 
@@ -508,33 +427,6 @@ class RHSMSubscriptionService:
     def sync_tally(self):
         """Sync tally operations"""
         pass
-
-class SystemService:
-    def __init__(self, rhsm_service, rhsm_service_cert, rhsm_service_key):
-        self.rhsm_service = rhsm_service 
-        self.rhsm_service_cert = rhsm_service_cert
-        self.rhsm_service_key = rhsm_service_key
-
-    def list_systems_for_users(self, username):
-        """Get System list for user using rhsm-api
-        
-        :param str username: username
-        """
-        url = f"https://{self.rhsm_service}/v1/systems"
-        header = {"X-RhsmApi-Username": username}
-        response = requests.get(
-            url,
-            headers=header, 
-            cert=(self.rhsm_service_cert, self.rhsm_service_key),
-        )
-        response.raise_for_status()
-        if response.ok:
-            res_count = json.loads(response.text)["pagination"]["count"]
-            if res_count > 0:
-                result = json.loads(response.text)["body"]
-                return result
-            else:
-                raise Exception("No Systems Present.")
 ```
 
 ---
@@ -546,9 +438,7 @@ class SystemService:
 - "Shorten/rewrite this code" is useful in making logic paths more readable  
 - Asking the same question will give you different answers, so you can get multiple implementations of the same thing  
 
-This AI assistant does adhere to "standard coding practices". While I wasn't able to refactor, I did find value in just seeing how the AI would structure code. As such, I was able to make an improvement of adding type hinting to our repo, allowing for better pre runtime linting, and ease of knowing what variable types should be passed in to a function.   
-[MR1](https://gitlab.cee.redhat.com/insights-qe/iqe-rhsm-subscriptions-plugin/-/merge_requests/1187)  
-[MR2](https://gitlab.cee.redhat.com/insights-qe/iqe-rhsm-subscriptions-plugin/-/merge_requests/1178)  
+This AI assistant does adhere to "standard coding practices". While I wasn't able to refactor, I did find value in just seeing how the AI would structure code. As such, I was able to make an improvement of adding type hinting to our repo, allowing for better pre runtime linting, and ease of knowing what variable types should be passed in to a function.     
 
 Prompting a refactor on `get_today_capacity_report_for_all_metric()` got me a response that contained type hinting:   
 ```
@@ -570,45 +460,7 @@ class CapacityReporter:
             **kwargs: Any
     ) -> int:
         """Helper method to get capacity report value for a specific metric"""
-        params = {"metric_id": metric_id, **kwargs}
-        if category:
-            params["category"] = category
-        return self.get_today_capacity_report(product_id, granularity, **params)["value"]
-
-    def get_today_capacity_report_for_all_metrics(
-            self, product_id: str, granularity: str = "Daily", **kwargs: Any
-    ) -> Dict[str, int]:
-        """
-        Get capacity report for all metrics in a dict
-        
-        Args:
-            product_id: The product id we wish to query
-            granularity: The level of granularity to return
-            **kwargs: Additional parameters for the capacity report
-        
-        Returns:
-            Dictionary containing capacity values for different metrics
-        """
-        return {
-            "sockets": self._get_metric_value(
-                product_id, granularity, self.METRIC_SOCKETS, **kwargs
-            ),
-            "cores": self._get_metric_value(
-                product_id, granularity, self.METRIC_CORES, **kwargs
-            ),
-            "physical_sockets": self._get_metric_value(
-                product_id, granularity, self.METRIC_SOCKETS, self.CATEGORY_PHYSICAL, **kwargs
-            ),
-            "hypervisor_sockets": self._get_metric_value(
-                product_id, granularity, self.METRIC_SOCKETS, self.CATEGORY_HYPERVISOR, **kwargs
-            ),
-            "physical_cores": self._get_metric_value(
-                product_id, granularity, self.METRIC_CORES, self.CATEGORY_PHYSICAL, **kwargs
-            ),
-            "hypervisor_cores": self._get_metric_value(
-                product_id, granularity, self.METRIC_CORES, self.CATEGORY_HYPERVISOR, **kwargs
-            ),
-        }
+...
 ```
 
 #### The Bad
